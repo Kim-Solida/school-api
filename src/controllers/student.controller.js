@@ -1,31 +1,12 @@
 import db from '../models/index.js';
+import { buildQueryOptions } from '../utils/queryOptions.js';
+
 
 /**
  * @swagger
  * tags:
  *   name: Students
  *   description: Student management
- */
-
-/**
- * @swagger
- * /students:
- *   post:
- *     summary: Create a new student
- *     tags: [Students]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [name]
- *             properties:
- *               name:
- *                 type: string
- *     responses:
- *       201:
- *         description: Student created
  */
 
 export const createStudent = async (req, res) => {
@@ -44,82 +25,47 @@ export const createStudent = async (req, res) => {
  *     summary: Get all students
  *     tags: [Students]
  *     parameters:
- * 
- *       # Pagination parameters 
  *       - in: query
  *         name: page
- *         schema:
- *           type: integer
- *           default: 1
- *         description: Page number (used for pagination)
+ *         schema: { type: integer, default: 1 }
+ *         description: Page number
  *       - in: query
  *         name: limit
- *         schema:
- *           type: integer
- *           default: 10
- *         description: Number of students to return per page
- * 
- *       # Sorting parameter 
+ *         schema: { type: integer, default: 10 }
+ *         description: Records per page
  *       - in: query
  *         name: sort
  *         schema:
  *           type: string
  *           enum: [asc, desc]
- *           default: asc
- *         description: Sort the results by creation date (ascending or descending)
- * 
- *       # Eager loading (populate) parameter 
+ *         description: Sort by createdAt
  *       - in: query
  *         name: populate
  *         schema:
  *           type: string
- *           example: courses
- *         description: Comma-separated list of related models to include in the response (e.g., courses)
-
+ *           enum:
+ *             - Course
+ *         description: Include related models
  *     responses:
  *       200:
  *         description: List of students
  */
 
 export const getAllStudents = async (req, res) => {
+  try {
+    const total = await db.Student.count();
+    const options = buildQueryOptions(req, ['Course']);
+    const students = await db.Student.findAll(options);
 
-    // == 1. Pagination ==
-    const limit = parseInt(req.query.limit) || 10;
-    const page = parseInt(req.query.page) || 1;
-
-    // == 2. Sorting ==
-    const sort = req.query.sort === 'desc' ? 'DESC': 'ASC';
-
-    // == 3. Eager Loading (Populate) ==
-    const populate = req.query.populate?.split(',') || [];
-
-    // Build the list of models to include in the query
-    const includeModels = [];
-    if (populate.includes('teacher')) includeModels.push(db.Teacher);  // (Optional) if linked
-    if (populate.includes('courses')) includeModels.push(db.Course);  // Valid: students take courses
-
-    try {
-
-        // Get total count of courses for pagination metadata
-        const total = await db.Student.count();
-
-        const students = await db.Student.findAll({
-            limit, 
-            offset: (page - 1) * limit,
-            order: [['createdAt', sort]],
-            include: includeModels
-        }); 
-
-        res.json({
-            total,
-            page,
-            totalPages: Math.ceil(total / limit),
-            data: students,
-        })
-
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+    res.json({
+      total,
+      page: parseInt(req.query.page) || 1,
+      totalPages: Math.ceil(total / (options.limit || 10)),
+      data: students,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 };
 
 /**
@@ -129,21 +75,19 @@ export const getAllStudents = async (req, res) => {
  *     summary: Get a student by ID
  *     tags: [Students]
  *     parameters:
- *       - in: path
- *         name: id
+ *       - name: id
+ *         in: path
  *         required: true
- *         schema:
- *           type: integer
+ *         schema: { type: integer }
  *     responses:
  *       200:
  *         description: A student
  *       404:
  *         description: Not found
  */
-
 export const getStudentById = async (req, res) => {
     try {
-        const student = await db.Student.findByPk(req.params.id, { include: [db.Course, db.Teacher] });
+        const student = await db.Student.findByPk(req.params.id, { include: db.Course });
         if (!student) return res.status(404).json({ message: 'Not found' });
         res.json(student);
     } catch (err) {
